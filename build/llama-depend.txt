@@ -1,0 +1,5 @@
+libcommon.a
+libllama.a
+libggml-cpu.a
+libggml-base.a
+libggml.a

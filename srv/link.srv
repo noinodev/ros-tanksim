@@ -1,0 +1,6 @@
+---
+uint32 id
+uint32 speed
+uint8 team
+uint32 width
+uint32 height

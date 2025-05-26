@@ -1,0 +1,4 @@
+<launch>
+    <!-- Start your simulator node -->
+    <node name="tanksim_simulator" pkg="tanksim" type="tanksim_simulator" output="screen" />
+</launch>
