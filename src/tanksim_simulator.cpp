@@ -1,3 +1,4 @@
+#include "ros/forwards.h"
 #include "ros/init.h"
 #include "ros/publisher.h"
 #include "ros/subscriber.h"
@@ -39,6 +40,7 @@ enum res_meshes {
     RES_MESH_TANK,
     RES_MESH_TANK_TURRET,
     RES_MESH_BUILDING,
+    RES_MESH_CUBE,
     RES_MESH_TREE,
     RES_MESH_QUAD,
     RES_MESH_LEN
@@ -110,7 +112,7 @@ heightfield_t heightfield_load_from_image(const char* file){
             float brightness = (px.r + px.g + px.b) / (3.0f * 255.0f);
             float b2 = (px2.r+px2.g+px2.b)/(3.0f*255.0f);
             if(brightness > 0.6) brightness *= 2;
-            heightfield.v[y * heightfield.w + x] = brightness*b2 * 40.0f;
+            heightfield.v[y * heightfield.w + x] = brightness * 10.0f;
         }
     }
 
@@ -191,9 +193,10 @@ std::string asset(const std::string& filename) {
 res_t res_init(){
 
     res_t out = (res_t){0};
-    out.models[RES_MESH_TANK] = LoadModel(asset("assets/t90b.obj").c_str());
-    out.meshes[RES_MESH_TANK] = out.models[RES_MESH_TANK].meshes[1];
-    out.meshes[RES_MESH_TANK_TURRET] = out.models[RES_MESH_TANK].meshes[0];
+    out.models[RES_MESH_TANK] = LoadModel(asset("assets/t90c.obj").c_str());
+    out.meshes[RES_MESH_TANK] = out.models[RES_MESH_TANK].meshes[0];
+    out.meshes[RES_MESH_TANK_TURRET] = out.models[RES_MESH_TANK].meshes[1];
+    out.meshes[RES_MESH_CUBE] = GenMeshCube(4,4,4);
 
     out.textures[RES_TEX_TANK_GREEN] = LoadTexture(asset("assets/t90_1.jpg").c_str());
     out.textures[RES_TEX_TANK_RED] = LoadTexture(asset("assets/t90_2.jpg").c_str());
@@ -784,7 +787,7 @@ void ecs_render_update(ecs_t* ecs, size_t type, size_t id, size_t didx){
         if(parent_pos != NULL){
             Matrix mat2;
             memcpy(&mat2,parent_pos->pos,sizeof(float[16]));
-            mat = MatrixMultiply(mat2,mat);
+            mat = MatrixMultiply(mat,mat2);
         }
     }
 
@@ -866,7 +869,7 @@ void ecs_physics_init(ecs_t* ecs, uint8_t* arg, size_t type, size_t id){
         dBodySetMass(out->body, &out->mass);
         dBodySetPosition(out->body,(dReal)pos->pos[3],(dReal)pos->pos[7],(dReal)pos->pos[11]);
         dGeomSetBody(out->geom, out->body);
-        dBodySetLinearDamping(out->body, 0.05);
+        //dBodySetLinearDamping(out->body, 0.05);
         dBodySetAngularDamping(out->body, 0.1);
     }else{
         dGeomSetOffsetPosition(out->geom, (dReal)pos->pos[3], (dReal)pos->pos[7], (dReal)pos->pos[11]);
@@ -920,7 +923,7 @@ float util_raycast(float length, float step, float* origin, float* vec, heightfi
         if(x >= 0 && x < heightfield->w && z >= 0 && z < heightfield->h){
             int idx = z * heightfield->w + x;
             if(heightfield->v[idx] >= pos[1]) return i*step;
-        }
+        }else return i*step;
 
         qt_key* nearest = NULL;
         float dist = -1;
@@ -1063,7 +1066,7 @@ void ecs_sensor_update(ecs_t* ecs, size_t type, size_t id, size_t didx){
 
             for(size_t i = 0; i < 90; i++){
                 Quaternion q_yaw = QuaternionFromAxisAngle((Vector3){0,1,0},(i*4+((float)(rand()%40))*.1)*DEG2RAD);//((float)(rand()%3600))*0.1*DEG2RAD); // polar linear scan with noise
-                Quaternion q_pitch = QuaternionFromAxisAngle((Vector3){1,0,0},/*10*DEG2RAD);*/(((float)(rand()%40))*0.1-20.)*DEG2RAD); // stochastic scan
+                Quaternion q_pitch = QuaternionFromAxisAngle((Vector3){1,0,0},/*10*DEG2RAD);*/(((float)(rand()%40))*0.1-2.)*DEG2RAD); // stochastic scan
                 Quaternion q_delta = QuaternionMultiply(q_yaw, q_pitch);
                 Quaternion q_sensor = QuaternionMultiply(q_mount,q_delta); 
                 Vector3 v_forward = { 0, 0, 1 }; // forward in local space
@@ -1148,10 +1151,10 @@ void ecs_sensor_update(ecs_t* ecs, size_t type, size_t id, size_t didx){
                 Vector3 v_difference = Vector3Subtract(v_scan,v_origin);
                 Vector3 v_direction = Vector3Normalize(v_difference);
                 float ray_length = Vector3Length(v_direction);
-                float dist = util_raycast(ray_length,1,(float*)&v_origin,(float*)&v_direction,obj->heightfield,obj->quadtree);
+                float dist = util_raycast(200,1,(float*)&v_origin,(float*)&v_direction,obj->heightfield,obj->quadtree);
                 Vector3 v_hit = Vector3Add(v_origin,Vector3Scale(v_direction,dist));
                 float hit_dist = Vector3Distance(v_scan,v_hit);
-                if(hit_dist < 4){
+                if(hit_dist < 16){
                     msg.data.push_back(v_difference.x);
                     msg.data.push_back(v_difference.y);
                     msg.data.push_back(v_difference.z);
@@ -1219,13 +1222,18 @@ void ecs_turret_update(ecs_t* ecs, size_t type, size_t id, size_t didx){
         obj->fire = actuator->value[2];
     }
 
+    const float turret_turn_spd = 0.05;
+
     Matrix m = *((Matrix*)pos->pos);
     Quaternion q_mount = QuaternionFromMatrix(m);
     Vector3 e_mount = QuaternionToEuler(q_mount);
-    e_mount.x = std::clamp(e_mount.x+obj->turn[1],-.5f,.5f);
-    e_mount.y += obj->turn[0];
+    //e_mount.x = std::clamp(e_mount.x+0.05f,-.5f,.5f);
+    //e_mount.x += obj->turn[1]*turret_turn_spd;
+    e_mount.y += obj->turn[0]*turret_turn_spd;
+    //printf("turret euler: %.1f %.1f\n",e_mount.x,e_mount.y);
     Quaternion q_delta = QuaternionFromEuler(e_mount.x,e_mount.y,e_mount.z);
     m = QuaternionToMatrix(q_delta);
+    m.m12 = 0; m.m13 = 0; m.m14 = 0;
     memcpy(pos->pos,&m,sizeof(float[16])); 
 
     if(obj->timer > 0) obj->timer--;
@@ -1377,16 +1385,16 @@ void ecs_vehicle_update(ecs_t* ecs, size_t type, size_t id, size_t didx){
     if(actuator != NULL){
         obj->throttle[0] = std::clamp(actuator->value[0], -1.f,1.f);
         obj->throttle[1] = std::clamp(actuator->value[1], -1.f,1.f);
-        obj->brake[0] = actuator->value[2];
-        obj->brake[1] = actuator->value[3];
+        obj->brake[0] = std::clamp(actuator->value[2], 0.f,1.f);
+        obj->brake[1] = std::clamp(actuator->value[3], 0.f,1.f);
     }
     
     for(size_t i = 0; i < obj->wheel_count; i++){
-        float torque = obj->throttle[i/(obj->wheel_count/2)]*80.;
-        dBodyAddTorque(obj->bwheels[i], torque*.1, 0, 0);
+        float torque = obj->throttle[i/(obj->wheel_count/2)]*100.;
+        //dBodyAddTorque(obj->bwheels[i], torque*.5, 0, 0);
         //if(torque > 0){
-            dJointSetHingeParam(obj->jwheels[i], dParamVel, 10+torque);
-            dJointSetHingeParam(obj->jwheels[i], dParamFMax, torque);
+            dJointSetHingeParam(obj->jwheels[i], dParamVel, 20*obj->throttle[i/(obj->wheel_count/2)]);
+            dJointSetHingeParam(obj->jwheels[i], dParamFMax, fabs(torque));
         //}
         float brake = 1-(obj->brake[i/(obj->wheel_count/2)]*.1);
         const dReal* av = dBodyGetAngularVel(obj->bwheels[i]);
@@ -1496,7 +1504,7 @@ int main(int argc, char** argv){
     // Set the target FPS
     SetTargetFPS(sim_speed);
     Camera3D camera = (Camera3D){(Vector3){10,10,10},(Vector3){0,0,0},(Vector3){0,1,0},80,CAMERA_PERSPECTIVE};
-    //SetCameraMode(camera, CAMERA_FIRST_PERSON);
+    //SetCameraMode(camera, CAMERA_ORBITAL);
     qt_tree quadtree = qt_tree_init(0,0,8192);
 
     ecs_t ecs = ecs_init();
@@ -1504,6 +1512,9 @@ int main(int argc, char** argv){
     ode_t ode = ode_init();
 
     size_t objs = 0;
+    size_t camera_idx = 0;
+    size_t camera_mode = 0;
+    float camera_zoom = 0;
 
     heightfield_t heightfield = heightfield_load_from_image(asset("assets/img_heightfield.png").c_str());
     res.meshes[RES_MESH_TERRAIN] = res_mesh_gen_heightfield(&heightfield);
@@ -1516,11 +1527,17 @@ int main(int argc, char** argv){
 
     rlDisableBackfaceCulling();
 
+    // combat game
+    ros::Publisher mission = nh.advertise<tanksim::sensor>("mission",10);
+    std::vector<Vector2> objectives = {};
+
+
     printf("OpenGL version: %d\n", rlGetVersion());
+    int frame = 0;
     // Main game loop
     while (!WindowShouldClose()) {    // Detect window close button or ESC key
+        frame++;
         util_camera(&camera);
-        UpdateCamera(&camera,CAMERA_FIRST_PERSON);
         // Start drawing
         BeginDrawing();
 
@@ -1532,8 +1549,8 @@ int main(int argc, char** argv){
         //DrawText("Hello, Raylib!", 190, 200, 20, LIGHTGRAY);
         if(IsKeyPressed(KEY_X)){ //qt_tree_insert(&quadtree,objs++,rand()%4096-2048,rand()%4096-2048);
             for(size_t i = 0; i < 1; i++){
-                float x = ((float)(rand()%800-400))*.1f;
-                float z = ((float)(rand()%800-400))*.1f;
+                float x = ((float)(rand()%800-400));
+                float z = ((float)(rand()%800-400));
                 float hp = 20;
                 size_t id = ecs_alloc_id(&ecs);
                 ecs_position_arg arg = (ecs_position_arg){&quadtree,x,heightfield.v[(int)floor(x+heightfield.w/2)*heightfield.w+(int)floor(z+heightfield.h/2)],z,1};
@@ -1620,6 +1637,48 @@ int main(int argc, char** argv){
             }
         }
 
+        if(IsKeyPressed(KEY_Z)) camera_mode = (camera_mode+1)%2;
+        if(IsKeyDown(KEY_UP)) camera_zoom += 0.05;
+        else if(IsKeyDown(KEY_DOWN)) camera_zoom -= 0.05;
+        if(camera_zoom < 0) camera_zoom = 0;
+        if(ecs.components[ECS_VEHICLE].size > 0){
+            size_t cidx = camera_idx;
+            if(IsKeyPressed(KEY_C)) camera_idx++;
+            camera_idx = camera_idx%ecs.components[ECS_VEHICLE].size;
+            size_t camera_sparse_idx = ecs.components[ECS_VEHICLE].map[camera_idx];
+            ecs_position_t* camera_pos = (ecs_position_t*)ecs_component_get_sparse(&ecs,ECS_POSITION, camera_sparse_idx);
+            if(camera_pos != NULL){
+
+                if(camera_mode == 1){
+                    Matrix camera_matrix = *(Matrix*)camera_pos->pos;
+                    Quaternion camera_quaternion = QuaternionFromMatrix(camera_matrix);
+                    Vector3 camera_offset = Vector3RotateByQuaternion((Vector3){0,0,1},camera_quaternion);
+
+                    camera.position = (Vector3){
+                        camera_pos->pos[3],
+                        camera_pos->pos[7]+2,
+                        camera_pos->pos[11]
+                    };
+
+                    camera.target = Vector3Add(camera.position,camera_offset);
+                    UpdateCamera(&camera,CAMERA_FIRST_PERSON);
+                }else{
+                    camera.target = (Vector3){
+                        camera_pos->pos[3],
+                        camera_pos->pos[7]+2,
+                        camera_pos->pos[11]
+                    };
+
+                    if(cidx != camera_idx){
+                        // switch pressed
+                        camera.position = Vector3Add(camera.target,(Vector3){4,4,4});
+                    }
+
+                    UpdateCamera(&camera,CAMERA_THIRD_PERSON);
+                }
+            }
+        }
+
 
         ode_update(&ode);
         if(ros::ok()) ros::spinOnce();
@@ -1629,9 +1688,43 @@ int main(int argc, char** argv){
         for(size_t i = 0; i < ecs.components[ECS_POSITION].size; i++) ecs.components[ECS_POSITION].update(&ecs,ECS_POSITION,ecs.components[ECS_POSITION].map[i],i);
         for(size_t i = 0; i < ecs.components[ECS_RENDER].size; i++) ecs.components[ECS_RENDER].update(&ecs,ECS_RENDER,ecs.components[ECS_RENDER].map[i],i);
         for(size_t i = 0; i < ecs.components[ECS_PHYSICS].size; i++) ecs.components[ECS_PHYSICS].update(&ecs,ECS_PHYSICS,ecs.components[ECS_PHYSICS].map[i],i);
-        for(size_t i = 0; i < ecs.components[ECS_VEHICLE].size; i++) ecs.components[ECS_VEHICLE].update(&ecs,ECS_VEHICLE,ecs.components[ECS_VEHICLE].map[i],i);
         for(size_t i = 0; i < ecs.components[ECS_HEALTH].size; i++) ecs.components[ECS_HEALTH].update(&ecs,ECS_HEALTH,ecs.components[ECS_HEALTH].map[i],i);
         for(size_t i = 0; i < ecs.components[ECS_TURRET].size; i++) ecs.components[ECS_TURRET].update(&ecs,ECS_TURRET,ecs.components[ECS_TURRET].map[i],i);  
+
+        if(frame%60==0)printf("objective dists: ");
+        for(size_t i = 0; i < ecs.components[ECS_VEHICLE].size; i++){
+            ecs.components[ECS_VEHICLE].update(&ecs,ECS_VEHICLE,ecs.components[ECS_VEHICLE].map[i],i);
+            ecs_position_t* pos = (ecs_position_t*)ecs_component_get_sparse(&ecs,ECS_POSITION,ecs.components[ECS_VEHICLE].map[i]);
+            Vector2 a = (Vector2){pos->pos[3],pos->pos[11]};
+            float md = FLT_MAX;
+            for(size_t j = 0; j < objectives.size();){
+                Vector2 b = objectives[i];
+                float d = Vector2Distance(a,b);
+                if(d < md) md = d;
+                if(d < 8){
+                    printf("tank %zu collected objective %zu\n",i,j);
+                    objectives.erase(objectives.begin()+j);
+                }else j++;
+            }
+            if(frame%60==0)printf("[%zu:%.1f] ",i,md);
+        }
+        if(frame%60==0)printf("\n");
+
+        if(objectives.size() <= 1){
+            for(size_t i = 0; i < 5; i++){
+                Vector2 candidate = (Vector2){rand()%800-400.f,rand()%800-400.f};
+                float h = heightfield.v[(int)(candidate.y+heightfield.w/2)*heightfield.w+(int)(candidate.x+heightfield.w/2)];
+                if(h < 10.) objectives.push_back(candidate);
+            }
+        }
+
+        tanksim::sensor msg;
+        msg.data.clear();
+        for(size_t i = 0; i < objectives.size(); i++){
+            msg.data.push_back(objectives[i].x);
+            msg.data.push_back(objectives[i].y);
+        }
+        mission.publish(msg);
 
         BeginMode3D(camera);
         for(size_t i = 0; i < ecs.components[ECS_SENSOR].size; i++) ecs.components[ECS_SENSOR].update(&ecs,ECS_SENSOR,ecs.components[ECS_SENSOR].map[i],i);

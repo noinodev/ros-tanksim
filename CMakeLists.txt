@@ -35,31 +35,31 @@ find_path(RAYLIB_INCLUDE_DIR raylib.h PATHS ${RAYLIB_DIR}/src)
 find_library(RAYLIB_LIBRARY NAMES raylib PATHS ${RAYLIB_DIR}/src ${RAYLIB_DIR}/build/raylib)
 
 ## ==== OpenMP ====
-find_package(OpenMP REQUIRED)
+#find_package(OpenMP REQUIRED)
 
 ## ==== Local llama ====
 # Path to your bundled .a files
-set(LLAMA_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/lib")
+#set(LLAMA_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/lib")
 
 ## ==== libtorch ====
-set(Torch_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/libtorch/share/cmake/Torch")
-find_package(Torch REQUIRED)
+#set(Torch_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/libtorch/share/cmake/Torch")
+#find_package(Torch REQUIRED)
 
 # List the static libraries manually in proper order
-set(LLAMA_DEPENDENCIES
-  ${LLAMA_LIB_DIR}/libcommon.a
-  ${LLAMA_LIB_DIR}/libllama.a
-  ${LLAMA_LIB_DIR}/libggml-cpu.a
-  ${LLAMA_LIB_DIR}/libggml-base.a
-  ${LLAMA_LIB_DIR}/libggml.a
-)
+#set(LLAMA_DEPENDENCIES
+#  ${LLAMA_LIB_DIR}/libcommon.a
+#  ${LLAMA_LIB_DIR}/libllama.a
+#  ${LLAMA_LIB_DIR}/libggml-cpu.a
+#  ${LLAMA_LIB_DIR}/libggml-base.a
+#  ${LLAMA_LIB_DIR}/libggml.a
+#)
 
 ## ==== Include Paths ====
 include_directories(
   include/llama
   ${catkin_INCLUDE_DIRS}
   ${RAYLIB_INCLUDE_DIR}
-  include/libtorch/include
+  #include/libtorch/include
 )
 
 set(CMAKE_CXX_STANDARD 17)
@@ -78,32 +78,17 @@ target_link_libraries(tanksim_simulator
   pthread
 )
 
-## ==== tanksim_planner ====
-add_executable(tanksim_planner src/tanksim_planner.cpp)
-
-target_link_libraries(tanksim_planner
-  ${catkin_LIBRARIES}
-  OpenMP::OpenMP_CXX
-  -Wl,--start-group
-  ${LLAMA_DEPENDENCIES}
-  -Wl,--end-group
-  m
-  dl
-  pthread
-  atomic
-)
-
 ## ==== tanksim_controller ====
 
 add_executable(tanksim_controller src/tanksim_controller.cpp)
 
 target_link_libraries(tanksim_controller
   ${catkin_LIBRARIES}
-  OpenMP::OpenMP_CXX
-  -Wl,--start-group
-  ${LLAMA_DEPENDENCIES}
-  -Wl,--end-group
-  "${TORCH_LIBRARIES}"
+  #OpenMP::OpenMP_CXX
+  #-Wl,--start-group
+  #${LLAMA_DEPENDENCIES}
+  #-Wl,--end-group
+  #"${TORCH_LIBRARIES}"
   m
   dl
   pthread
