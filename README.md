@@ -30,6 +30,7 @@ Agent:
  - A* global planning for observed slam data
  - vector field histogram (vfh) + reactive potential field (RPF) local planning for obstacle avoidance, using LIDAR data
  - heuristic reactive target acquisition and aiming using PID control, derived from simulated computer vision camera data
+ 
  Uncompleted features
  - high-level tactical planning through GOAP or similar long-term planner
  - team-tactics through central control node, coordination protocols for sensor data
@@ -45,6 +46,7 @@ Engine:
  - custom integrated sensor array, loosely modeling real sensors
  - bespoke entity-component-system for dynamic composition of entities, with hierarchical relationships
  - generic serial sensor/actuator apis, enabling easy expansion
+ 
  Uncompleted features:
  - better graphics
  - headless mode for training simulations and performance metrics
