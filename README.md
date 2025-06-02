@@ -11,13 +11,15 @@ Further development is arranged for use with llama.cpp and LibTorch for ML-based
 The project can be built with catkin_make.
 
 To run the program after building, follow this sequence:
-run 'rosrun tanksim tanksim_simulator' to launch the simulator program
-in the simulator program, press 'X' on the keyboard, as many times as desired, to create tank agents that can be linked to by controller nodes
-then run 'rosrun tanksim tanksim_controller' as many times as desired, in new terminals, up to the number of tanks currently in the simulation.
-the program will automatically assign agents to controllers, and they will behave autonomously responding to game instructions provided by the simulation
+ - run 'rosrun tanksim tanksim_simulator' to launch the simulator program
+ - in the simulator program, press 'X' on the keyboard, as many times as desired, to create tank agents that can be linked to by controller nodes
+ - then run 'rosrun tanksim tanksim_controller' as many times as desired, in new terminals, up to the number of tanks currently in the simulation.
+ - the program will automatically assign agents to controllers, and they will behave autonomously responding to game instructions provided by the simulation
 
 To change camera modes, press 'Z' on the keyboard. This will swap between first and third person view.
+
 You can also press 'C' to change the agent target of the camera.
+
 This part is a bit janky because it was done in under five minutes.
 
 The whole program, for that matter, is very janky--i did not have much time to complete it.
