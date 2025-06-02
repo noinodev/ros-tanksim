@@ -111,8 +111,8 @@ heightfield_t heightfield_load_from_image(const char* file){
             Color px2 = pixels[x*heightfield.w+y];
             float brightness = (px.r + px.g + px.b) / (3.0f * 255.0f);
             float b2 = (px2.r+px2.g+px2.b)/(3.0f*255.0f);
-            if(brightness > 0.6) brightness *= 2;
-            heightfield.v[y * heightfield.w + x] = brightness * 10.0f;
+            if(brightness > 0.55) brightness *= 2;
+            heightfield.v[y * heightfield.w + x] = brightness * 30.0f;
         }
     }
 
@@ -415,7 +415,7 @@ void qt_tree_find(qt_tree* tree, qt_node* node, float x, float z, float* nearest
     if(node->isleaf){
         for(int i = 0; i < node->key_count; i++){
             float dist = util_distance(x, z, node->key[i].x, node->key[i].z);
-            if(*nearest_dist = -1 || dist < *nearest_dist){
+            if(*nearest_dist == -1 || dist < *nearest_dist){
                 *nearest_dist = dist;
                 *nearest_key = &node->key[i];
             }

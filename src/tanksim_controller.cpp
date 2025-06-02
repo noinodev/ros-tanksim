@@ -274,6 +274,7 @@ void ros_sensor_callback(size_t type, std::vector<float> data, ros_t* ros){
 					n++;
 				}else{
 					*h = std::max(*h,v_pos.y);//util_ema(*h,v_pos.y,.5); // exponential moving average
+					// experimental heighfield inflation, little improvement from this
 					/*if(*h == v_pos.y){
 						// if lidar is higher, inflate surrounding terrain
 						const int radius = 2;
@@ -548,7 +549,8 @@ float util_wrap_angle(float angle) {
 }
 
 
-Vector2 mp_vfh_plus(Vector2 target_dir, float* lidar, float radius) {
+// reactive potential field
+Vector2 mp_rpf(Vector2 target_dir, float* lidar, float radius) {
     const float k_attract = 2.f;    // Goal attraction strength
     const float k_repel = 4.0f;      // Obstacle repulsion strength
     float obstacle_radius = 2*radius; // Distance where repulsion kicks in
@@ -575,6 +577,8 @@ Vector2 mp_vfh_plus(Vector2 target_dir, float* lidar, float radius) {
         }
     }*/
 
+    // construct wall surface normals and calculate normal repulsion + tangent sliding forces
+    // bias is equal but i had ENOUGH of tuning
     for (int i = 1; i < LIDAR_BIN - 1; i++) {
 	    float distance = lidar[i];
 	    if (distance < obstacle_radius) {
@@ -639,6 +643,7 @@ typedef struct {
 	float mean;
 } vfh_data;
 
+// naive vector field histogram
 vfh_data mp_vfh(float* lidar, float desired_heading_rad, float min_dist) {
     float best_score = -FLT_MAX;
 	int best_bin = -1;
@@ -681,13 +686,13 @@ float mp_pid(controller_pid_t* pid, float error, float dt){
     return output;
 }
 
-float mp_blend(float astar_heading, float vfh_heading, float vfhp_heading, float bias){
+float mp_blend(float astar_heading, float vfh_heading, float rpf_heading, float bias){
     float w_astar = 0.4+0.5*(1.-bias);
-    float w_vfhp = 0.5*bias;//bias;
+    float w_rpf = 0.5*bias;//bias;
     float w_vfh = 0.1;
 
-    float blended_x = cosf(astar_heading) * w_astar + cosf(vfh_heading) * w_vfh + cosf(vfhp_heading) * w_vfhp;
-    float blended_y = sinf(astar_heading) * w_astar + sinf(vfh_heading) * w_vfh + sinf(vfhp_heading) * w_vfhp;
+    float blended_x = cosf(astar_heading) * w_astar + cosf(vfh_heading) * w_vfh + cosf(rpf_heading) * w_rpf;
+    float blended_y = sinf(astar_heading) * w_astar + sinf(vfh_heading) * w_vfh + sinf(rpf_heading) * w_rpf;
 
     return atan2f(blended_y, blended_x);
 }
@@ -752,21 +757,21 @@ void mp_travel(ros_t* ros){
 
 	// local orientation directions (apply algorithms to these)
 	Vector2 local_goal_astar = Vector2Rotate(world_goal_astar, -current_heading);
-	Vector2 local_goal_vfhp = mp_vfh_plus(local_goal_astar, slam->lidar, 8.f);
-	Vector2 world_goal_vfhp = Vector2Rotate(local_goal_vfhp, current_heading);
+	Vector2 local_goal_rpf = mp_rpf(local_goal_astar, slam->lidar, 8.f);
+	Vector2 world_goal_rpf = Vector2Rotate(local_goal_rpf, current_heading);
 
 	vfh_data vfh = mp_vfh(slam->lidar,0,16.);
 
 	// local orientation offsets (desired path is some combination of these)
 	float desired_heading_astar = (atan2f(local_goal_astar.y,local_goal_astar.x));
-	float desired_heading_vfhp = (atan2f(local_goal_vfhp.y, local_goal_vfhp.x));
+	float desired_heading_rpf = (atan2f(local_goal_rpf.y, local_goal_rpf.x));
 	float desired_heading_vfh = (vfh.offset);
 
 	float proximity_bias = std::max(0.f,1.f-(std::max(0.f,vfh.min-4.f)/16.f));
-	float alignment_factor = fmaxf(0.f, 0.8+0.2*fabsf(cosf(desired_heading_vfhp)));
+	float alignment_factor = fmaxf(0.f, 0.8+0.2*fabsf(cosf(desired_heading_rpf)));
 	float final_bias = proximity_bias * alignment_factor;
 	//float blend_bias = std::max(0.f,1.f-(min_dist/16.f));
-	float desired_heading_blended = mp_blend(desired_heading_astar,desired_heading_vfh,desired_heading_vfhp,final_bias);
+	float desired_heading_blended = mp_blend(desired_heading_astar,desired_heading_vfh,desired_heading_rpf,final_bias);
 	float angle_difference = util_wrap_angle(desired_heading_blended);
 
 	float forward_dist = slam->lidar[0];
@@ -793,7 +798,7 @@ void mp_travel(ros_t* ros){
 	printf("control: %.2f| %.2f- %.2f/\n",throttle,steering,differential);
 	printf("min dist: %.1f bias: %.1f stuck: %zu (%zu, %f)\n",vfh.min,final_bias,planner->stuck,planner->stuck_time,lv);
 	printf("ha %.1f hvf %.1f hvp %.1f  :: hb %.1f (ad %.1f)\n",
-		desired_heading_astar,desired_heading_vfh,desired_heading_vfhp,desired_heading_blended,angle_difference);
+		desired_heading_astar,desired_heading_vfh,desired_heading_rpf,desired_heading_blended,angle_difference);
 	
 	float left = std::clamp(throttle - steering, -1.f, 1.f);
 	float right = std::clamp(throttle + steering, -1.f, 1.f);
